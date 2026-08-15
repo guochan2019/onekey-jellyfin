@@ -105,6 +105,62 @@ show_mounts() {
   echo ""
 }
 
+# ---------- 升级（已安装时） ----------
+do_upgrade() {
+  echo ""
+  warn "========== 升级 Jellyfin =========="
+  echo ""
+  local VER
+  VER=$(get_current_ver)
+  info "检测到 Jellyfin ${VER} 已安装，执行升级（apt install --only-upgrade）"
+
+  # 1. 更新 APT 源
+  info "=== 1/3 更新 APT 源 ==="
+  apt-get update -qq
+
+  # 2. 升级 jellyfin 全家（仅升级，不重装官方脚本）
+  info "=== 2/3 升级 jellyfin 软件包 ==="
+  apt-get install --only-upgrade -y jellyfin jellyfin-server jellyfin-web jellyfin-ffmpeg7
+
+  # 3. 修正属主 + 验证
+  info "=== 3/3 修正数据目录属主并验证 ==="
+  if [ -d /var/lib/jellyfin ]; then
+    chown -R jellyfin:adm /var/lib/jellyfin
+    info "  ✓ /var/lib/jellyfin 递归属主已修正为 jellyfin:adm"
+  fi
+  HEALTH_CODE="000"
+  for i in $(seq 1 12); do
+    if systemctl is-active jellyfin >/dev/null 2>&1; then
+      HEALTH_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 http://localhost:8096/health 2>/dev/null || echo "000")
+      [ "$HEALTH_CODE" = "200" ] && break
+    fi
+    sleep 5
+  done
+  if systemctl is-active jellyfin >/dev/null 2>&1; then
+    info "  ✓ jellyfin 服务运行中"
+  else
+    err "  jellyfin 服务未运行，请检查: journalctl -u jellyfin -n 50"
+  fi
+  if [ "$HEALTH_CODE" = "200" ]; then
+    info "  ✓ 健康检查 http://localhost:8096/health = 200"
+  else
+    warn "  ⚠ 健康检查返回 $HEALTH_CODE（服务可能仍在初始化，稍后重试）"
+  fi
+
+  VER=$(get_current_ver)
+  echo ""
+  info "========== 升级完成 =========="
+  info "  Jellyfin 版本 : ${VER:-未知}"
+  LIB_MOUNT=$(findmnt -n -o SOURCE /var/lib/jellyfin 2>/dev/null || echo "容器本地 rootfs")
+  info "  数据目录      : /var/lib/jellyfin (媒体库数据库)"
+  info "  挂载来源      : ${LIB_MOUNT}"
+  if [ "$LIB_MOUNT" = "容器本地 rootfs" ]; then
+    warn "  ⚠ 数据目录在容器本地 rootfs —— 销毁/重建 LXC 将丢失媒体库数据!"
+  fi
+  info "  升级方式      : 重跑本脚本选 1，或 apt upgrade"
+  exit 0
+}
+
 # ---------- 安装/升级 ----------
 do_install() {
   echo ""
@@ -112,6 +168,12 @@ do_install() {
   echo ""
   precheck
   show_mounts
+
+  # 已安装 → 走升级分支（不重装，直接 apt upgrade）
+  if [ -n "$(get_current_ver)" ]; then
+    do_upgrade
+    return
+  fi
 
   # 1. 安装依赖
   info "=== 1/5 安装依赖 (curl) ==="
