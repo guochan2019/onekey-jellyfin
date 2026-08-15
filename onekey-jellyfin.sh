@@ -102,37 +102,7 @@ do_install() {
   apt-get update -qq
   apt-get install -y -qq curl
 
-  # 1.5 挂载点自动检测（防与 OCI 部署共享数据目录导致版本冲突）
-  #    例: OCI jellyfin CT200 的 mp0 是 /opt/jellyfin/config → /config
-  #    若本机 /var/lib/jellyfin 也 mp 挂载到 /opt/jellyfin/*，两个部署共享宿主数据 → stable/preview 互污染
-  echo ""
-  info "=== 挂载点检测 ==="
-  for d in /var/lib/jellyfin /var/cache/jellyfin; do
-    MOUNT_SRC=$(findmnt -n -o SOURCE "$d" 2>/dev/null || echo "")
-    if [ -n "$MOUNT_SRC" ]; then
-      info "  $d → $MOUNT_SRC (mp 挂载，宿主侧数据)"
-      # 检测是否与 OCI 部署共享宿主路径（/opt/jellyfin 是 OCI CT200 使用的宿主目录）
-      case "$MOUNT_SRC" in
-        /opt/jellyfin/*)
-          warn "  ⚠ 挂载源 ${MOUNT_SRC} 与 OCI Jellyfin (CT200) 共用宿主路径!"
-          warn "    两个部署共享数据目录会导致 stable/preview 版本互污染"
-          warn "    建议: 在 PVE 宿主将本 LXC 的 mp 改为独立路径, 如:"
-          warn "      pct set <CTID> -mp0 /opt/jellyfin-deb/config,mp=/var/lib/jellyfin"
-          warn "      pct set <CTID> -mp1 /opt/jellyfin-deb/cache,mp=/var/cache/jellyfin"
-          read -p "确认继续安装？(y/n，默认 n): " MOUNT_CONFIRM </dev/tty
-          MOUNT_CONFIRM=${MOUNT_CONFIRM:-n}
-          if [ "$MOUNT_CONFIRM" != "y" ] && [ "$MOUNT_CONFIRM" != "Y" ]; then
-            err "已取消——请先修改 mp 挂载路径避免与 OCI 共享"
-          fi
-          ;;
-      esac
-    else
-      info "  $d → (容器本地，rootfs)"
-    fi
-  done
-  echo ""
-
-  # 1.6 检测已有数据库（防跨版本迁移破坏数据——2026-08-15 OCI preview 数据库被 stable 迁移污染事故）
+  # 1.5 检测已有数据库（防跨版本迁移破坏数据——2026-08-15 OCI preview 数据库被 stable 迁移污染事故）
   DB_FILE="/var/lib/jellyfin/data/jellyfin.db"
   if [ -f "$DB_FILE" ]; then
     echo ""
