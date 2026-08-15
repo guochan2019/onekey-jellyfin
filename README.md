@@ -17,7 +17,7 @@ bash onekey-jellyfin.sh
 
 | 选项 | 说明 |
 |------|------|
-| **1. 安装 / 升级** | 环境预检（root/系统/依赖/端口/网络 5 项）→ 下载官方 install-debuntu.sh + SHA256 校验 → 执行官方脚本（自动装 GPG key、写 deb822 源、apt 安装 jellyfin metapackage）→ 修正数据目录属主 → 验证（systemctl + `/health` 200 轮询） |
+| **1. 安装 / 升级** | **已安装时自动走升级**：`apt install --only-upgrade`（不重装官方脚本）→ 属主修正 → 验证。**未安装时走全新安装**：环境预检（root/系统/依赖/端口/网络 5 项）→ 数据库检测 → 下载官方 install-debuntu.sh + SHA256 校验 → 执行官方脚本（自动装 GPG key、写 deb822 源、apt 安装 jellyfin metapackage）→ 修正数据目录属主 → 验证（systemctl + `/health` 200 轮询） |
 | **2. 完全卸载** | 双模式（见下）→ 停止/禁用服务 → remove 或 purge → 删除 APT 源 + GPG 密钥 → 清理残留 + 校验 |
 | **0. 退出** | — |
 
