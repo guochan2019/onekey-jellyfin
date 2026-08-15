@@ -53,12 +53,13 @@ bash onekey-jellyfin.sh
 
 1. **卸载保留数据 = `apt remove`**：jellyfin 包 postrm 的 remove 分支不删任何数据目录（仅 purge 分支删），所以模式 1 数据原目录完整保留，重装即恢复——无需备份/迁移。
 2. **彻底卸载（purge）会清空数据**：postrm purge 分支会 `rm -rf` 数据目录；挂载点目录本身删不掉（`Device or resource busy` 报错属预期，`|| true` 容错），但内容会被清空。挂载点残留由宿主侧手动清理（`pct set <CTID> -delete mpX` 后删宿主目录）。
-3. **安装前数据库检测**：检测到已有数据库时提示迁移风险（同版本重装/升级无损；跨版本如 preview→stable 可能不兼容）并确认，防止跨版本迁移破坏数据。
-4. **安装后修正数据目录属主**：官方 postinst 只修 `/var/lib/jellyfin` 顶层，挂载点/预存在目录时子目录仍为 root 会导致 jellyfin 写库失败（health 503），脚本自动 `chown -R jellyfin:adm`。
-5. **升级方式**：重跑脚本选 1（走官方脚本），或直接 `apt upgrade`。数据目录存在即保留，升级不丢媒体库。
-6. **卸载不执行 `autoremove`**：避免连带删除系统工具导致意外问题。
-7. **GPU 硬件转码**（可选）：需宿主侧直通 `/dev/dri`（card0 + renderD128，mode=0777），容器内 jellyfin 用户自动加入 video/render 组（官方 postinst 自动处理）。Jellyfin 后台 → 播放 → 转码 → 硬件加速选 VAAPI。
-8. **首次初始化**：浏览器打开 `http://<IP>:8096`，设置管理员账号 + 添加媒体库。
+3. **自动检测 mp 挂载点并显示映射目录**：安装前脚本检测 `/var/lib/jellyfin`、`/var/cache/jellyfin` 是否为 mp 挂载点，是则显示宿主映射路径（如 `pct set <CTID> -mpX /opt/jellyfin_deb,mp=/var/lib/jellyfin` 时显示 `→ /opt/jellyfin_deb`），安装完成再次显示"挂载来源"确认数据落在正确的宿主目录。若数据目录在容器本地 rootfs（未配置 mp 挂载），会警告"销毁/重建 LXC 将丢失媒体库数据"并给出挂载建议。**挂载本身由 PVE 宿主侧 `pct set -mpX` 配置决定，脚本只检测并显示。**
+4. **安装前数据库检测**：检测到已有数据库时提示迁移风险（同版本重装/升级无损；跨版本如 preview→stable 可能不兼容）并确认，防止跨版本迁移破坏数据。
+5. **安装后修正数据目录属主**：官方 postinst 只修 `/var/lib/jellyfin` 顶层，挂载点/预存在目录时子目录仍为 root 会导致 jellyfin 写库失败（health 503），脚本自动 `chown -R jellyfin:adm`。
+6. **升级方式**：重跑脚本选 1（走官方脚本），或直接 `apt upgrade`。数据目录存在即保留，升级不丢媒体库。
+7. **卸载不执行 `autoremove`**：避免连带删除系统工具导致意外问题。
+8. **GPU 硬件转码**（可选）：需宿主侧直通 `/dev/dri`（card0 + renderD128，mode=0777），容器内 jellyfin 用户自动加入 video/render 组（官方 postinst 自动处理）。Jellyfin 后台 → 播放 → 转码 → 硬件加速选 VAAPI。
+9. **首次初始化**：浏览器打开 `http://<IP>:8096`，设置管理员账号 + 添加媒体库。
 
 ## 验证
 
