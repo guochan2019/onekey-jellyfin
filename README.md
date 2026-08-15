@@ -59,7 +59,8 @@ bash onekey-jellyfin.sh
 6. **升级方式**：重跑脚本选 1（走官方脚本），或直接 `apt upgrade`。数据目录存在即保留，升级不丢媒体库。
 7. **卸载不执行 `autoremove`**：避免连带删除系统工具导致意外问题。
 8. **GPU 硬件转码**（可选）：需宿主侧直通 `/dev/dri`（card0 + renderD128，mode=0777），容器内 jellyfin 用户自动加入 video/render 组（官方 postinst 自动处理）。Jellyfin 后台 → 播放 → 转码 → 硬件加速选 VAAPI。
-9. **首次初始化**：浏览器打开 `http://<IP>:8096`，设置管理员账号 + 添加媒体库。
+9. **自动设置 UTF-8 locale**：Debian LXC 默认 `LANG=C`（非 UTF-8）会导致 Jellyfin 中文文件名/目录乱码（GitHub issue #3485）。脚本安装/升级后自动向 `/etc/default/jellyfin` 写入 `LANG=C.UTF-8`（幂等，不重复写）并重启服务。
+10. **首次初始化**：浏览器打开 `http://<IP>:8096`，设置管理员账号 + 添加媒体库。
 
 ## 验证
 
