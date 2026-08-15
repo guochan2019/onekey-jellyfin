@@ -98,12 +98,32 @@ do_install() {
   precheck
 
   # 1. 安装依赖
-  info "=== 1/4 安装依赖 (curl) ==="
+  info "=== 1/5 安装依赖 (curl) ==="
   apt-get update -qq
   apt-get install -y -qq curl
 
+  # 1.5 检测已有数据库（防跨版本迁移破坏数据——2026-08-15 OCI preview 数据库被 stable 迁移污染事故）
+  DB_FILE="/var/lib/jellyfin/data/jellyfin.db"
+  if [ -f "$DB_FILE" ]; then
+    echo ""
+    warn "========== 检测到已有 Jellyfin 数据库 =========="
+    warn "  路径: ${DB_FILE}"
+    warn "  继续安装将对其执行数据库迁移:"
+    warn "    - 相同版本重装/升级: 无损（保留媒体库/配置/用户）"
+    warn "    - 跨版本 (preview→stable 等): 可能不兼容，建议先备份"
+    warn "  备份命令: cp -a ${DB_FILE} ${DB_FILE}.bak"
+    echo ""
+    read -p "是否继续？(y/n，默认 y): " DB_CONFIRM </dev/tty
+    DB_CONFIRM=${DB_CONFIRM:-y}
+    if [ "$DB_CONFIRM" != "y" ] && [ "$DB_CONFIRM" != "Y" ]; then
+      info "已取消安装（数据库未改动）"
+      exit 0
+    fi
+    echo ""
+  fi
+
   # 2. 下载官方脚本 + 校验
-  info "=== 2/4 下载官方安装脚本 + SHA256 校验 ==="
+  info "=== 2/5 下载官方安装脚本 + SHA256 校验 ==="
   cd /root
   rm -f install-debuntu.sh install-debuntu.sh.sha256sum
   curl -s "$INSTALL_SCRIPT" -O
