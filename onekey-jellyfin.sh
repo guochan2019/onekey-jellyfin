@@ -129,7 +129,50 @@ do_upgrade() {
     info "  ✓ /var/lib/jellyfin 递归属主已修正为 jellyfin:adm"
   fi
   # LANG=C 下 jellyfin 中文乱码（GitHub issue #3485）——写入 /etc/default/jellyfin 服务环境
-  if ! grep -q '^LANG=' /etc/default/jellyfin 2>/dev/null; then
+  # 先校验 conffile 完整性：关键变量缺失（曾被 > 覆盖/破坏）→ 用官方模板重建
+  if ! grep -q '^JELLYFIN_WEB_OPT=' /etc/default/jellyfin 2>/dev/null; then
+    warn "  ⚠ /etc/default/jellyfin 缺少关键变量 JELLYFIN_WEB_OPT（conffile 可能被破坏），重建完整模板"
+    cat > /etc/default/jellyfin <<'EOF'
+# Jellyfin default configuration options
+# This is a POSIX shell fragment
+
+# General options
+
+# Program directories
+JELLYFIN_DATA_DIR="/var/lib/jellyfin"
+JELLYFIN_CONFIG_DIR="/etc/jellyfin"
+JELLYFIN_LOG_DIR="/var/log/jellyfin"
+JELLYFIN_CACHE_DIR="/var/cache/jellyfin"
+
+# web client path, installed by the jellyfin-web package
+JELLYFIN_WEB_OPT="--webdir=/usr/share/jellyfin/web"
+
+# ffmpeg binary paths, overriding the system values
+JELLYFIN_FFMPEG_OPT="--ffmpeg=/usr/lib/jellyfin-ffmpeg/ffmpeg"
+
+# Use jemalloc2 for improved RAM usage (#11588)
+LD_PRELOAD=/usr/lib/jellyfin/libjemalloc.so
+
+# Disable glibc dynamic heap adjustment
+MALLOC_TRIM_THRESHOLD_=131072
+
+# [OPTIONAL] run Jellyfin as a headless service
+JELLYFIN_SERVICE_OPT=""
+
+# [OPTIONAL] run Jellyfin without the web app
+JELLYFIN_NOWEBAPP_OPT=""
+
+# Space to add additional command line options
+JELLYFIN_ADDITIONAL_OPTS=""
+
+# Application username
+JELLYFIN_USER="jellyfin"
+
+# LANG for UTF-8 (fix Chinese garbled text, issue #3485)
+LANG=C.UTF-8
+EOF
+    info "  ✓ /etc/default/jellyfin 已重建为完整模板（含 LANG=C.UTF-8）"
+  elif ! grep -q '^LANG=' /etc/default/jellyfin 2>/dev/null; then
     echo 'LANG=C.UTF-8' >> /etc/default/jellyfin
     info "  ✓ 已设置 jellyfin 服务 locale: LANG=C.UTF-8"
   fi
@@ -229,7 +272,50 @@ do_install() {
     info "  ✓ /var/lib/jellyfin 递归属主已修正为 jellyfin:adm"
   fi
   # LANG=C 下 jellyfin 中文乱码（GitHub issue #3485）——写入 /etc/default/jellyfin 服务环境
-  if ! grep -q '^LANG=' /etc/default/jellyfin 2>/dev/null; then
+  # 先校验 conffile 完整性：关键变量缺失（曾被 > 覆盖/破坏）→ 用官方模板重建
+  if ! grep -q '^JELLYFIN_WEB_OPT=' /etc/default/jellyfin 2>/dev/null; then
+    warn "  ⚠ /etc/default/jellyfin 缺少关键变量 JELLYFIN_WEB_OPT（conffile 可能被破坏），重建完整模板"
+    cat > /etc/default/jellyfin <<'EOF'
+# Jellyfin default configuration options
+# This is a POSIX shell fragment
+
+# General options
+
+# Program directories
+JELLYFIN_DATA_DIR="/var/lib/jellyfin"
+JELLYFIN_CONFIG_DIR="/etc/jellyfin"
+JELLYFIN_LOG_DIR="/var/log/jellyfin"
+JELLYFIN_CACHE_DIR="/var/cache/jellyfin"
+
+# web client path, installed by the jellyfin-web package
+JELLYFIN_WEB_OPT="--webdir=/usr/share/jellyfin/web"
+
+# ffmpeg binary paths, overriding the system values
+JELLYFIN_FFMPEG_OPT="--ffmpeg=/usr/lib/jellyfin-ffmpeg/ffmpeg"
+
+# Use jemalloc2 for improved RAM usage (#11588)
+LD_PRELOAD=/usr/lib/jellyfin/libjemalloc.so
+
+# Disable glibc dynamic heap adjustment
+MALLOC_TRIM_THRESHOLD_=131072
+
+# [OPTIONAL] run Jellyfin as a headless service
+JELLYFIN_SERVICE_OPT=""
+
+# [OPTIONAL] run Jellyfin without the web app
+JELLYFIN_NOWEBAPP_OPT=""
+
+# Space to add additional command line options
+JELLYFIN_ADDITIONAL_OPTS=""
+
+# Application username
+JELLYFIN_USER="jellyfin"
+
+# LANG for UTF-8 (fix Chinese garbled text, issue #3485)
+LANG=C.UTF-8
+EOF
+    info "  ✓ /etc/default/jellyfin 已重建为完整模板（含 LANG=C.UTF-8）"
+  elif ! grep -q '^LANG=' /etc/default/jellyfin 2>/dev/null; then
     echo 'LANG=C.UTF-8' >> /etc/default/jellyfin
     info "  ✓ 已设置 jellyfin 服务 locale: LANG=C.UTF-8"
   fi
