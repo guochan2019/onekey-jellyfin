@@ -197,39 +197,48 @@ uninstall_jellyfin() {
       warn "  $d 是挂载点(mount point) —— 删除将清空宿主侧数据!"
     fi
   done
-  read -p "是否同时删除数据目录 (${DATA_DIRS})？(y/n，默认 n 保留): " DEL_DATA </dev/tty
-  DEL_DATA=${DEL_DATA:-n}
+  read -p "是否保留数据目录 (${DATA_DIRS})？(y/n，默认 y 保留): " KEEP_DATA </dev/tty
+  KEEP_DATA=${KEEP_DATA:-y}
 
-  # 1. 停止并禁用服务
-  info "=== 1/4 停止并禁用 jellyfin 服务 ==="
+  # 1. 停止并禁用服务（必须先停服，再搬数据，避免搬移运行中的数据库）
+  info "=== 1/5 停止并禁用 jellyfin 服务 ==="
   systemctl stop jellyfin 2>/dev/null || true
   systemctl disable jellyfin 2>/dev/null || true
 
-  # 2. 卸载包（purge 连 conffile 一起删；不执行 autoremove——避免连带删系统工具）
-  info "=== 2/4 卸载 jellyfin 软件包 ==="
+  # 2. 若保留数据：purge 前先把数据目录复制到备份（jellyfin-server postrm 会 rm -rf 全部数据目录，
+  #    挂载点目录本身删不掉但内容会被清空 → 必须主动备份才能真保留。
+  #    用 cp -a 而非 mv：/var/lib/jellyfin 可能是 mp 挂载点，mv 整个挂载点会导致 mount 失效/宿主侧异常）
+  BK_DIR=""
+  if [ "$KEEP_DATA" = "y" ] || [ "$KEEP_DATA" = "Y" ]; then
+    BK_DATE=$(date +%Y%m%d-%H%M%S)
+    BK_DIR="/root/jellyfin-backup-${BK_DATE}"
+    info "=== 2/5 备份数据目录 → ${BK_DIR} ==="
+    mkdir -p "$BK_DIR"
+    for d in /var/lib/jellyfin /etc/jellyfin /var/log/jellyfin /var/cache/jellyfin; do
+      if [ -d "$d" ] && [ -n "$(ls -A "$d" 2>/dev/null)" ]; then
+        cp -a "$d" "${BK_DIR}/$(basename "$d")"
+        info "  ✓ 已备份 $d"
+      else
+        info "  - 跳过（不存在或为空）: $d"
+      fi
+    done
+  fi
+
+  # 3. 卸载包（purge 连 conffile 一起删；不执行 autoremove——避免连带删系统工具。
+  #    注意: jellyfin-server postrm 会 rm -rf 数据目录，但第 2 步已把数据搬走，
+  #    这里 purge 只会删掉空目录/无影响）
+  info "=== 3/5 卸载 jellyfin 软件包 ==="
   apt-get purge -y jellyfin jellyfin-server jellyfin-web jellyfin-ffmpeg7
 
-  # 3. 删除 APT 源 + 密钥（install-debuntu.sh 写入的产物）
-  info "=== 3/4 删除 APT 源和 GPG 密钥 ==="
+  # 4. 删除 APT 源 + 密钥（install-debuntu.sh 写入的产物）
+  info "=== 4/5 删除 APT 源和 GPG 密钥 ==="
   rm -f /etc/apt/sources.list.d/jellyfin.sources
   rm -f /etc/apt/sources.list.d/jellyfin.list
   rm -f /etc/apt/keyrings/jellyfin.gpg
   apt-get update -qq
 
-  # 4. 删除数据目录（按用户选择）
-  if [ "$DEL_DATA" = "y" ] || [ "$DEL_DATA" = "Y" ]; then
-    info "=== 4/4 删除数据目录 ==="
-    for d in /var/lib/jellyfin /etc/jellyfin /var/log/jellyfin /var/cache/jellyfin; do
-      [ "$d" = "/var/lib/jellyfin" ] || [ "$d" = "/etc/jellyfin" ] || [ "$d" = "/var/log/jellyfin" ] || [ "$d" = "/var/cache/jellyfin" ] || err "数据目录路径异常: $d"
-      rm -rf "$d"
-      info "  ✓ 已删除 $d"
-    done
-  else
-    info "=== 4/4 跳过数据目录删除（保留） ==="
-    info "  保留: /var/lib/jellyfin /etc/jellyfin /var/log/jellyfin /var/cache/jellyfin"
-  fi
-
-  # 清理遗留安装脚本
+  # 5. 清理遗留安装脚本
+  info "=== 5/5 清理残留 ==="
   rm -f /root/install-debuntu.sh /root/install-debuntu.sh.sha256sum
 
   echo ""
@@ -245,10 +254,13 @@ uninstall_jellyfin() {
     info "  ✓ jellyfin 命令已移除"
   fi
   info "  ✓ APT 源/密钥已清理"
-  if [ "$DEL_DATA" = "y" ] || [ "$DEL_DATA" = "Y" ]; then
-    info "  ✓ 数据目录已删除（如需重装将全新初始化）"
+  if [ "$KEEP_DATA" = "y" ] || [ "$KEEP_DATA" = "Y" ]; then
+    info "  ✓ 数据已备份至 ${BK_DIR}"
+    info "    恢复方法: 重装后先 systemctl stop jellyfin，"
+    info "    将 ${BK_DIR}/jellyfin 内容复制回 /var/lib/jellyfin，"
+    info "    再启动服务（原媒体库/配置/用户恢复）"
   else
-    info "  ✓ 数据目录已保留（重装选 1 可恢复原媒体库）"
+    info "  ✓ 数据目录已删除（如需重装将全新初始化）"
   fi
   exit 0
 }
