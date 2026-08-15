@@ -122,12 +122,19 @@ do_upgrade() {
   info "=== 2/3 升级 jellyfin 软件包 ==="
   apt-get install --only-upgrade -y jellyfin jellyfin-server jellyfin-web jellyfin-ffmpeg7
 
-  # 3. 修正属主 + 验证
+  # 3. 修正属主 + 设置 UTF-8 locale + 验证
   info "=== 3/3 修正数据目录属主并验证 ==="
   if [ -d /var/lib/jellyfin ]; then
     chown -R jellyfin:adm /var/lib/jellyfin
     info "  ✓ /var/lib/jellyfin 递归属主已修正为 jellyfin:adm"
   fi
+  # LANG=C 下 jellyfin 中文乱码（GitHub issue #3485）——写入 /etc/default/jellyfin 服务环境
+  if ! grep -q '^LANG=' /etc/default/jellyfin 2>/dev/null; then
+    echo 'LANG=C.UTF-8' >> /etc/default/jellyfin
+    info "  ✓ 已设置 jellyfin 服务 locale: LANG=C.UTF-8"
+  fi
+  systemctl daemon-reload
+  systemctl restart jellyfin
   HEALTH_CODE="000"
   for i in $(seq 1 12); do
     if systemctl is-active jellyfin >/dev/null 2>&1; then
@@ -221,6 +228,13 @@ do_install() {
     chown -R jellyfin:adm /var/lib/jellyfin
     info "  ✓ /var/lib/jellyfin 递归属主已修正为 jellyfin:adm"
   fi
+  # LANG=C 下 jellyfin 中文乱码（GitHub issue #3485）——写入 /etc/default/jellyfin 服务环境
+  if ! grep -q '^LANG=' /etc/default/jellyfin 2>/dev/null; then
+    echo 'LANG=C.UTF-8' >> /etc/default/jellyfin
+    info "  ✓ 已设置 jellyfin 服务 locale: LANG=C.UTF-8"
+  fi
+  systemctl daemon-reload
+  systemctl restart jellyfin
 
   # 5. 验证（轮询最多 60s，避免迁移期误报 503）
   info "=== 5/5 验证 ==="
