@@ -36,7 +36,7 @@ get_current_ver() {
   if ! dpkg -l jellyfin >/dev/null 2>&1; then
     echo ""; return
   fi
-  dpkg -l jellyfin 2>/dev/null | awk '/^ii  jellyfin / {print $3}' || echo ""
+  dpkg -l jellyfin 2>/dev/null | awk '/^ii[ ]+jellyfin[ ]+/ {print $3}' | head -1
 }
 
 # ---------- 预检 ----------
@@ -135,27 +135,6 @@ do_install() {
   info "=== 3/5 执行官方安装脚本 ==="
   bash install-debuntu.sh
 
-  # 3.5 检测已有数据（apt remove 卸载后数据目录原样保留，重装直接复用；
-  #    此检测用于跨版本场景提示迁移风险——2026-08-15 OCI preview 数据库被 stable 迁移污染事故）
-  DB_FILE="/var/lib/jellyfin/data/jellyfin.db"
-  if [ -f "$DB_FILE" ]; then
-    echo ""
-    warn "========== 检测到已有 Jellyfin 数据库 =========="
-    warn "  路径: ${DB_FILE}"
-    warn "  继续安装将对其执行数据库迁移:"
-    warn "    - 相同版本重装/升级: 无损（保留媒体库/配置/用户）"
-    warn "    - 跨版本 (preview→stable 等): 可能不兼容，建议先备份"
-    warn "  备份命令: cp -a ${DB_FILE} ${DB_FILE}.bak"
-    echo ""
-    read -p "是否继续？(y/n，默认 y): " DB_CONFIRM </dev/tty
-    DB_CONFIRM=${DB_CONFIRM:-y}
-    if [ "$DB_CONFIRM" != "y" ] && [ "$DB_CONFIRM" != "Y" ]; then
-      info "已取消安装（数据库未改动）"
-      exit 0
-    fi
-    echo ""
-  fi
-
   # 4. 修正数据目录属主（官方 postinst 只修 /var/lib/jellyfin 顶层；
   #    挂载点/预存在目录时子目录(config/data 等)仍为 root，
   #    jellyfin 用户写不进去 → 启动报 Permission denied → health 503）
@@ -219,6 +198,9 @@ uninstall_jellyfin() {
   echo ""
   read -p "请输入 (1/2，默认 1): " UNINST_MODE </dev/tty
   UNINST_MODE=${UNINST_MODE:-1}
+  if [ "$UNINST_MODE" != "1" ] && [ "$UNINST_MODE" != "2" ]; then
+    err "无效的卸载方式: ${UNINST_MODE}（请输入 1 或 2）"
+  fi
 
   if [ "$UNINST_MODE" = "2" ]; then
     echo ""
@@ -265,10 +247,10 @@ uninstall_jellyfin() {
 
   echo ""
   info "========== 卸载完成 =========="
-  if dpkg -l jellyfin >/dev/null 2>&1; then
-    warn "  ⚠ jellyfin 包仍存在: $(dpkg -l jellyfin | awk '/^ii/ {print $3}')"
+  if dpkg -l jellyfin 2>/dev/null | grep -qE '^ii\s+jellyfin\s'; then
+    warn "  ⚠ jellyfin 包仍存在: $(dpkg -l jellyfin | awk '/^ii  jellyfin / {print $3}')"
   else
-    info "  ✓ jellyfin 软件包已移除"
+    info "  ✓ jellyfin 软件包已移除（rc 残留配置不影响）"
   fi
   if command -v jellyfin >/dev/null 2>&1; then
     warn "  ⚠ jellyfin 命令仍然存在，请检查"
