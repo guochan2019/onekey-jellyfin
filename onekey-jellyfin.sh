@@ -98,7 +98,7 @@ do_install() {
   precheck
 
   # 1. 安装依赖
-  info "=== 1/5 安装依赖 (curl) ==="
+  info "=== 1/6 安装依赖 (curl) ==="
   apt-get update -qq
   apt-get install -y -qq curl
 
@@ -123,7 +123,7 @@ do_install() {
   fi
 
   # 2. 下载官方脚本 + 校验
-  info "=== 2/5 下载官方安装脚本 + SHA256 校验 ==="
+  info "=== 2/6 下载官方安装脚本 + SHA256 校验 ==="
   cd /root
   rm -f install-debuntu.sh install-debuntu.sh.sha256sum
   curl -s "$INSTALL_SCRIPT" -O
@@ -132,20 +132,55 @@ do_install() {
   # sha256sum -c 输出 "install-debuntu.sh: OK"；校验失败会非零退出（set -e 触发 trap）
 
   # 3. 执行官方脚本（自动: 装 GPG key → 写 deb822 源 → apt update → 装 jellyfin metapackage）
-  info "=== 3/5 执行官方安装脚本 ==="
+  info "=== 3/6 执行官方安装脚本 ==="
   bash install-debuntu.sh
+
+  # 3.5 检测卸载备份并询问恢复（卸载时保留的数据在 /root/jellyfin-backup）
+  BK_DIR="/root/jellyfin-backup"
+  if [ -d "$BK_DIR" ] && [ -n "$(ls -A "$BK_DIR" 2>/dev/null)" ]; then
+    echo ""
+    warn "========== 检测到数据备份 =========="
+    warn "  位置: ${BK_DIR}"
+    warn "  内容: $(ls "$BK_DIR" | tr '\n' ' ')"
+    warn "  恢复将把备份复制回数据目录（覆盖本次全新初始化的数据）"
+    echo ""
+    read -p "是否恢复备份数据？(y/n，默认 y): " RESTORE_DATA </dev/tty
+    RESTORE_DATA=${RESTORE_DATA:-y}
+    if [ "$RESTORE_DATA" = "y" ] || [ "$RESTORE_DATA" = "Y" ]; then
+      info "=== 4/6 恢复备份数据 ==="
+      systemctl stop jellyfin 2>/dev/null || true
+      # 备份目录名: <父目录>-jellyfin → 还原为 /<父目录>/jellyfin
+      for bk in "$BK_DIR"/*; do
+        [ -d "$bk" ] || continue
+        BK_NAME=$(basename "$bk")
+        PARENT_DIR="${BK_NAME%-*}"
+        RESTORE_PATH="/${PARENT_DIR}/jellyfin"
+        if [ "$PARENT_DIR" = "var-lib" ]; then RESTORE_PATH="/var/lib/jellyfin"; fi
+        if [ "$PARENT_DIR" = "etc" ]; then RESTORE_PATH="/etc/jellyfin"; fi
+        if [ "$PARENT_DIR" = "var-log" ]; then RESTORE_PATH="/var/log/jellyfin"; fi
+        if [ "$PARENT_DIR" = "var-cache" ]; then RESTORE_PATH="/var/cache/jellyfin"; fi
+        mkdir -p "$RESTORE_PATH"
+        cp -a "$bk/." "$RESTORE_PATH/"
+        info "  ✓ 已恢复 $RESTORE_PATH"
+      done
+      info "  备份数据已恢复（属主修正见下一步）"
+    else
+      info "=== 4/6 跳过备份恢复（使用全新初始化数据） ==="
+    fi
+    echo ""
+  fi
 
   # 4. 修正数据目录属主（官方 postinst 只修 /var/lib/jellyfin 顶层；
   #    挂载点/预存在目录时子目录(config/data 等)仍为 root，
   #    jellyfin 用户写不进去 → 启动报 Permission denied → health 503）
-  info "=== 4/5 修正数据目录属主 ==="
+  info "=== 5/6 修正数据目录属主 ==="
   if [ -d /var/lib/jellyfin ]; then
     chown -R jellyfin:adm /var/lib/jellyfin
     info "  ✓ /var/lib/jellyfin 递归属主已修正为 jellyfin:adm"
   fi
 
   # 5. 验证（轮询最多 60s，避免迁移期误报 503）
-  info "=== 5/5 验证 ==="
+  info "=== 6/6 验证 ==="
   HEALTH_CODE="000"
   for i in $(seq 1 12); do
     if systemctl is-active jellyfin >/dev/null 2>&1; then
@@ -207,17 +242,19 @@ uninstall_jellyfin() {
 
   # 2. 若保留数据：purge 前先把数据目录复制到备份（jellyfin-server postrm 会 rm -rf 全部数据目录，
   #    挂载点目录本身删不掉但内容会被清空 → 必须主动备份才能真保留。
-  #    用 cp -a 而非 mv：/var/lib/jellyfin 可能是 mp 挂载点，mv 整个挂载点会导致 mount 失效/宿主侧异常）
-  BK_DIR=""
+  #    用 cp -a 而非 mv：/var/lib/jellyfin 可能是 mp 挂载点，mv 整个挂载点会导致 mount 失效/宿主侧异常。
+  #    备份目录固定为 /root/jellyfin-backup（覆盖旧备份），重装时自动检测恢复）
+  BK_DIR="/root/jellyfin-backup"
   if [ "$KEEP_DATA" = "y" ] || [ "$KEEP_DATA" = "Y" ]; then
-    BK_DATE=$(date +%Y%m%d-%H%M%S)
-    BK_DIR="/root/jellyfin-backup-${BK_DATE}"
     info "=== 2/5 备份数据目录 → ${BK_DIR} ==="
+    rm -rf "$BK_DIR"
     mkdir -p "$BK_DIR"
     for d in /var/lib/jellyfin /etc/jellyfin /var/log/jellyfin /var/cache/jellyfin; do
       if [ -d "$d" ] && [ -n "$(ls -A "$d" 2>/dev/null)" ]; then
-        cp -a "$d" "${BK_DIR}/$(basename "$d")"
-        info "  ✓ 已备份 $d"
+        # 目录名带父目录前缀，避免 4 个 basename 都是 "jellyfin" 互相覆盖
+        BK_NAME="$(basename "$(dirname "$d")")-$(basename "$d")"
+        cp -a "$d" "${BK_DIR}/${BK_NAME}"
+        info "  ✓ 已备份 $d → ${BK_NAME}"
       else
         info "  - 跳过（不存在或为空）: $d"
       fi
@@ -256,9 +293,7 @@ uninstall_jellyfin() {
   info "  ✓ APT 源/密钥已清理"
   if [ "$KEEP_DATA" = "y" ] || [ "$KEEP_DATA" = "Y" ]; then
     info "  ✓ 数据已备份至 ${BK_DIR}"
-    info "    恢复方法: 重装后先 systemctl stop jellyfin，"
-    info "    将 ${BK_DIR}/jellyfin 内容复制回 /var/lib/jellyfin，"
-    info "    再启动服务（原媒体库/配置/用户恢复）"
+    info "    下次安装将自动检测并询问恢复（选 1 安装时）"
   else
     info "  ✓ 数据目录已删除（如需重装将全新初始化）"
   fi
