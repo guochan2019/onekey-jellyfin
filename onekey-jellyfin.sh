@@ -112,22 +112,37 @@ do_install() {
   # sha256sum -c 输出 "install-debuntu.sh: OK"；校验失败会非零退出（set -e 触发 trap）
 
   # 3. 执行官方脚本（自动: 装 GPG key → 写 deb822 源 → apt update → 装 jellyfin metapackage）
-  info "=== 3/4 执行官方安装脚本 ==="
+  info "=== 3/5 执行官方安装脚本 ==="
   bash install-debuntu.sh
 
-  # 4. 验证
-  info "=== 4/4 验证 ==="
-  sleep 3
+  # 4. 修正数据目录属主（官方 postinst 只修 /var/lib/jellyfin 顶层；
+  #    挂载点/预存在目录时子目录(config/data 等)仍为 root，
+  #    jellyfin 用户写不进去 → 启动报 Permission denied → health 503）
+  info "=== 4/5 修正数据目录属主 ==="
+  if [ -d /var/lib/jellyfin ]; then
+    chown -R jellyfin:adm /var/lib/jellyfin
+    info "  ✓ /var/lib/jellyfin 递归属主已修正为 jellyfin:adm"
+  fi
+
+  # 5. 验证（轮询最多 60s，避免迁移期误报 503）
+  info "=== 5/5 验证 ==="
+  HEALTH_CODE="000"
+  for i in $(seq 1 12); do
+    if systemctl is-active jellyfin >/dev/null 2>&1; then
+      HEALTH_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 http://localhost:8096/health 2>/dev/null || echo "000")
+      [ "$HEALTH_CODE" = "200" ] && break
+    fi
+    sleep 5
+  done
   if systemctl is-active jellyfin >/dev/null 2>&1; then
     info "  ✓ jellyfin 服务运行中"
   else
     err "  jellyfin 服务未运行，请检查: journalctl -u jellyfin -n 50"
   fi
-  CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 http://localhost:8096/health 2>/dev/null || echo "000")
-  if [ "$CODE" = "200" ]; then
+  if [ "$HEALTH_CODE" = "200" ]; then
     info "  ✓ 健康检查 http://localhost:8096/health = 200"
   else
-    warn "  ⚠ 健康检查返回 $CODE（服务可能仍在初始化，稍后重试）"
+    warn "  ⚠ 健康检查返回 $HEALTH_CODE（服务可能仍在初始化，稍后重试）"
   fi
 
   VER=$(get_current_ver)
