@@ -248,7 +248,7 @@ uninstall_jellyfin() {
   echo ""
   info "========== 卸载完成 =========="
   if dpkg -l jellyfin 2>/dev/null | grep -qE '^ii\s+jellyfin\s'; then
-    warn "  ⚠ jellyfin 包仍存在: $(dpkg -l jellyfin | awk '/^ii  jellyfin / {print $3}')"
+    warn "  ⚠ jellyfin 包仍存在: $(dpkg -l jellyfin | awk '/^ii[ ]+jellyfin[ ]+/ {print $3}' | head -1)"
   else
     info "  ✓ jellyfin 软件包已移除（rc 残留配置不影响）"
   fi
