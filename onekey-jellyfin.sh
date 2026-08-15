@@ -90,12 +90,28 @@ precheck() {
   fi
 }
 
+# ---------- 挂载状态展示 ----------
+show_mounts() {
+  echo ""
+  info "=== 数据目录挂载状态 ==="
+  for d in /var/lib/jellyfin /var/cache/jellyfin; do
+    MOUNT_SRC=$(findmnt -n -o SOURCE "$d" 2>/dev/null || echo "")
+    if [ -n "$MOUNT_SRC" ]; then
+      info "  $d → $MOUNT_SRC (mp 挂载，宿主侧数据)"
+    else
+      warn "  $d → (容器本地 rootfs)"
+    fi
+  done
+  echo ""
+}
+
 # ---------- 安装/升级 ----------
 do_install() {
   echo ""
   warn "========== 安装 / 升级 Jellyfin =========="
   echo ""
   precheck
+  show_mounts
 
   # 1. 安装依赖
   info "=== 1/5 安装依赖 (curl) ==="
@@ -170,7 +186,13 @@ do_install() {
   info "========== 安装完成 =========="
   info "  Jellyfin 版本 : ${VER:-未知}"
   info "  Web 地址      : http://<本机IP>:8096"
+  LIB_MOUNT=$(findmnt -n -o SOURCE /var/lib/jellyfin 2>/dev/null || echo "容器本地 rootfs")
   info "  数据目录      : /var/lib/jellyfin (媒体库数据库)"
+  info "  挂载来源      : ${LIB_MOUNT}"
+  if [ "$LIB_MOUNT" = "容器本地 rootfs" ]; then
+    warn "  ⚠ 数据目录在容器本地 rootfs —— 销毁/重建 LXC 将丢失媒体库数据!"
+    warn "    建议在 PVE 宿主配置 mp 挂载到宿主盘, 如: pct set <CTID> -mpX /opt/jellyfin_deb,mp=/var/lib/jellyfin"
+  fi
   info "  配置目录      : /etc/jellyfin"
   info "  升级方式      : 重跑本脚本选 1，或 apt upgrade"
   warn "  提示: 若数据目录为挂载点(mp)，重装/升级不丢数据；GPU 直通需宿主侧 dev0/dev1 配置"
