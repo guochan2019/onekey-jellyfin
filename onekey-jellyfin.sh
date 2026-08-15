@@ -25,6 +25,11 @@ REPO_BASE="https://repo.jellyfin.org"
 INSTALL_SCRIPT="${REPO_BASE}/install-debuntu.sh"
 CHECKSUM_URL="${REPO_BASE}/install-debuntu.sh.sha256sum"
 DATA_DIRS="/var/lib/jellyfin /etc/jellyfin /var/log/jellyfin /var/cache/jellyfin"
+# 备份目录：⚠ 默认在容器 rootfs，销毁 LXC 重建会丢失！
+# 若需销毁重建后仍可恢复，请改为宿主持久路径（mp 挂载进来的目录），
+# 例如: BK_DIR="/var/lib/jellyfin-backup"（需在 PVE 配置 mp: /opt/jellyfin/backup,mp=/var/lib/jellyfin-backup）
+# 或复用已有 mp 挂载点下的目录，如 BK_DIR="/mnt/nvme1/jellyfin-backup"
+BK_DIR="/root/jellyfin-backup"
 
 # ---------- 检测 root ----------
 if [ "$(id -u)" -ne 0 ]; then
@@ -135,8 +140,7 @@ do_install() {
   info "=== 3/6 执行官方安装脚本 ==="
   bash install-debuntu.sh
 
-  # 3.5 检测卸载备份并询问恢复（卸载时保留的数据在 /root/jellyfin-backup）
-  BK_DIR="/root/jellyfin-backup"
+  # 3.5 检测卸载备份并询问恢复（卸载时保留的数据在 ${BK_DIR}）
   if [ -d "$BK_DIR" ] && [ -n "$(ls -A "$BK_DIR" 2>/dev/null)" ]; then
     echo ""
     warn "========== 检测到数据备份 =========="
@@ -243,9 +247,23 @@ uninstall_jellyfin() {
   # 2. 若保留数据：purge 前先把数据目录复制到备份（jellyfin-server postrm 会 rm -rf 全部数据目录，
   #    挂载点目录本身删不掉但内容会被清空 → 必须主动备份才能真保留。
   #    用 cp -a 而非 mv：/var/lib/jellyfin 可能是 mp 挂载点，mv 整个挂载点会导致 mount 失效/宿主侧异常。
-  #    备份目录固定为 /root/jellyfin-backup（覆盖旧备份），重装时自动检测恢复）
-  BK_DIR="/root/jellyfin-backup"
+  #    备份目录 ${BK_DIR}（顶部变量可配），重装时自动检测恢复）
   if [ "$KEEP_DATA" = "y" ] || [ "$KEEP_DATA" = "Y" ]; then
+    # 备份位置安全提示：BK_DIR 不在挂载点 = 在 rootfs，销毁 LXC 重建会丢
+    BK_MOUNTED=0
+    findmnt "$BK_DIR" >/dev/null 2>&1 && BK_MOUNTED=1
+    if [ "$BK_MOUNTED" = "0" ]; then
+      warn "  ⚠ 备份目录 ${BK_DIR} 在容器 rootfs 内"
+      warn "    销毁 LXC 重建后备份会丢失！建议改脚本顶部 BK_DIR 为 mp 挂载的宿主持久路径"
+      warn "    （例: 配置 mp: /opt/jellyfin/backup,mp=/var/lib/jellyfin-backup，再设 BK_DIR=/var/lib/jellyfin-backup）"
+      echo ""
+      read -p "仍要备份到该位置？(y/n，默认 y): " BK_CONFIRM </dev/tty
+      BK_CONFIRM=${BK_CONFIRM:-y}
+      if [ "$BK_CONFIRM" != "y" ] && [ "$BK_CONFIRM" != "Y" ]; then
+        info "已取消备份（数据目录将由 postrm 清空，慎重）"
+        exit 0
+      fi
+    fi
     info "=== 2/5 备份数据目录 → ${BK_DIR} ==="
     rm -rf "$BK_DIR"
     mkdir -p "$BK_DIR"
@@ -294,6 +312,8 @@ uninstall_jellyfin() {
   if [ "$KEEP_DATA" = "y" ] || [ "$KEEP_DATA" = "Y" ]; then
     info "  ✓ 数据已备份至 ${BK_DIR}"
     info "    下次安装将自动检测并询问恢复（选 1 安装时）"
+    info "    提示: 若 /var/lib/jellyfin 是 mp 挂载点(宿主盘)，销毁重建 LXC 后数据仍在宿主侧，"
+    info "    重建后 mp 挂载回来即可用，无需依赖本备份"
   else
     info "  ✓ 数据目录已删除（如需重装将全新初始化）"
   fi
