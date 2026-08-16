@@ -353,7 +353,7 @@ EOF
   info "  挂载来源      : ${LIB_MOUNT}"
   if [ "$LIB_MOUNT" = "容器本地 rootfs" ]; then
     warn "  ⚠ 数据目录在容器本地 rootfs —— 销毁/重建 LXC 将丢失媒体库数据!"
-    warn "    建议在 PVE 宿主配置 mp 挂载到宿主盘, 如: pct set <CTID> -mpX /opt/jellyfin_deb,mp=/var/lib/jellyfin"
+    warn "    建议在 PVE 宿主配置 mp 挂载到宿主盘, 如: pct set <CTID> -mpX /opt/jellyfin_deb/config,mp=/var/lib/jellyfin"
   fi
   info "  配置目录      : /etc/jellyfin"
   info "  升级方式      : 重跑本脚本选 1，或 apt upgrade"
